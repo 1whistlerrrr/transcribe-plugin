@@ -1,0 +1,16 @@
+{
+  "name": "transcribe-marketplace",
+  "owner": {
+    "name": "1whistlerrrr"
+  },
+  "version": "0.1.0",
+  "plugins": [
+    {
+      "name": "transcribe",
+      "source": "./",
+      "version": "0.1.0",
+      "description": "视频/音频 → 文字转写。基于 mlx-whisper（Apple GPU 加速），支持模型选择、音频拆分、自动代理。",
+      "keywords": ["whisper", "transcribe", "audio", "video", "speech-to-text"]
+    }
+  ]
+}
