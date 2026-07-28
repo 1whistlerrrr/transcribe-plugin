@@ -150,19 +150,125 @@ def split_audio_by_duration(audio_path: str, duration_min: float,
     return chunks
 
 
-# ===================== 5. 网络代理（可选功能） =====================
+# ===================== 5. 网络代理（可选功能，自动检测） =====================
 
-def setup_proxy(proxy: Optional[str]) -> None:
-    """设置 HTTP/HTTPS 代理（仅当用户显式指定 --proxy 时生效）。
+def _get_macos_proxy() -> Optional[str]:
+    """从 macOS 系统设置中获取当前活跃网络接口的 HTTP 代理。
 
-    不传 --proxy 则不设任何代理，直连访问 HuggingFace。
+    适用于已在系统偏好设置或 Clash/V2Ray 等工具中设为系统代理的场景。
     """
-    if not proxy:
+    if sys.platform != "darwin":
+        return None
+    try:
+        # 获取当前活跃的网络服务名
+        result = subprocess.run(
+            ["networksetup", "-listnetworkserviceorder"],
+            capture_output=True, text=True, timeout=5,
+        )
+        # 找第一个有 IP 的活跃接口（Wi-Fi / Ethernet / USB 10/100/1000 LAN 等）
+        for line in result.stdout.splitlines():
+            if line.strip().startswith("(") and "Hardware Port" in line:
+                # 提取服务名，格式: (Hardware Port: Wi-Fi, Device: en0)
+                service = line.split(": ")[1].split(",")[0].strip()
+                # 读取该服务的代理设置
+                proxy_result = subprocess.run(
+                    ["networksetup", "-getwebproxy", service],
+                    capture_output=True, text=True, timeout=5,
+                )
+                enabled = False
+                host, port = "", ""
+                for pline in proxy_result.stdout.splitlines():
+                    if pline.strip() == "Enabled: Yes":
+                        enabled = True
+                    if pline.strip().startswith("Server:"):
+                        host = pline.split(":")[1].strip()
+                    if pline.strip().startswith("Port:"):
+                        port = pline.split(":")[1].strip()
+                if enabled and host and port:
+                    return f"http://{host}:{port}"
+    except Exception:
+        pass
+    return None
+
+
+def _get_env_proxy() -> Optional[str]:
+    """从环境变量中获取代理设置。Clash Verge 等工具通常会在终端注入这些变量。"""
+    for key in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
+        val = os.environ.get(key, "").strip()
+        if val and val.startswith("http"):
+            return val
+    return None
+
+
+def _verify_proxy(proxy_url: str, timeout: int = 3) -> bool:
+    """验证代理是否可用（通过它访问 HuggingFace）。"""
+    try:
+        result = subprocess.run(
+            ["curl", "-s", "--connect-timeout", str(timeout),
+             "--proxy", proxy_url,
+             "-o", "/dev/null", "-w", "%{http_code}",
+             "https://huggingface.co"],
+            capture_output=True, text=True, timeout=timeout + 3,
+        )
+        return result.stdout.strip() in ("200", "302", "301", "401")
+    except Exception:
+        return False
+
+
+def detect_system_proxy() -> Optional[str]:
+    """自动检测系统代理（优先级从高到低）。
+
+    1. 环境变量（Clash / V2Ray / 手动设置）
+    2. macOS 系统代理设置
+    3. 验证可用性
+
+    返回可用的代理 URL，或 None 表示直连。
+    """
+    candidates = []
+
+    env_proxy = _get_env_proxy()
+    if env_proxy:
+        candidates.append(("环境变量", env_proxy))
+
+    macos_proxy = _get_macos_proxy()
+    if macos_proxy and macos_proxy not in [c[1] for c in candidates]:
+        candidates.append(("macOS 系统代理", macos_proxy))
+
+    for source, url in candidates:
+        if _verify_proxy(url):
+            print(f"🔗 检测到代理（{source}）: {url}")
+            return url
+        else:
+            print(f"⚠️  发现代理但不可用（{source}）: {url}")
+
+    return None
+
+
+def setup_proxy(proxy: Optional[str], no_proxy: bool = False) -> None:
+    """配置代理。
+
+    --proxy http://x.x.x.x:port  → 手动指定
+    --no-proxy                   → 强制直连
+    都不传                        → 自动检测系统代理
+    """
+    if no_proxy:
+        for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+            os.environ.pop(key, None)
+        print("🚫 强制直连（--no-proxy）")
         return
 
+    if proxy:
+        proxy_url = proxy
+        print(f"🔗 手动指定代理: {proxy_url}")
+    else:
+        proxy_url = detect_system_proxy()
+        if not proxy_url:
+            print("🌐 未检测到代理，直连 HuggingFace")
+            print("   💡 需要代理时用 --proxy http://127.0.0.1:7897")
+            return
+
     for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
-        os.environ[key] = proxy
-    print(f"🔗 使用代理: {proxy}")
+        os.environ[key] = proxy_url
 
 
 # ===================== 6. 设备检测 =====================
@@ -420,9 +526,10 @@ def main():
     split.add_argument("--split-duration", type=float, default=0, metavar="MIN", help="按分钟拆分")
     split.add_argument("--keep-chunks", action="store_true", help="保留中间片段")
 
-    # 代理（可选）
-    net = parser.add_argument_group("网络代理（可选）")
-    net.add_argument("--proxy", default=None, help="HTTP 代理地址，如 http://127.0.0.1:7897")
+    # 代理（可选，自动检测）
+    net = parser.add_argument_group("网络代理（可选，自动检测系统代理）")
+    net.add_argument("--proxy", default=None, help="手动指定 HTTP 代理，如 http://127.0.0.1:7897")
+    net.add_argument("--no-proxy", action="store_true", help="强制直连，不检测也不使用代理")
 
     # 音频提取（可选）
     audio = parser.add_argument_group("音频提取（可选）")
@@ -449,8 +556,8 @@ def main():
         print(f"❌ 文件不存在: {args.input}", file=sys.stderr)
         sys.exit(1)
 
-    # --- 网络代理（仅当用户指定时启用） ---
-    setup_proxy(args.proxy)
+    # --- 网络代理（自动检测 or 手动指定 or 禁用） ---
+    setup_proxy(args.proxy, args.no_proxy)
 
     output_path = args.output or os.path.splitext(args.input)[0] + ".txt"
 

@@ -30,7 +30,8 @@ python skills/transcribe/scripts/transcribe.py <文件路径> [参数]
 | `--backend` | auto / mlx / faster | auto |
 | `--keep-wav` | 保留提取的 WAV | 删 |
 | `--keep-chunks` | 保留拆分片段 | 删 |
-| `--proxy` | HTTP 代理地址 | 不走代理 |
+| `--proxy` | 手动指定 HTTP 代理 | 自动检测 |
+| `--no-proxy` | 强制直连，跳过代理检测 | - |
 
 ## 工作流程
 
