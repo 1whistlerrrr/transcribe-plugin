@@ -1,0 +1,11 @@
+# Apple GPU 加速（M 系列 Mac 推荐，必装其一）
+mlx-whisper>=0.4.0
+
+# CPU 备选后端（非 Mac 或没有 mlx 时使用，必装其一）
+faster-whisper>=1.0.0
+
+# --- 以下都是上面两个自动拉进来的依赖，不用手动装 ---
+# huggingface-hub  (模型下载)
+# numpy
+# torch
+# tqdm

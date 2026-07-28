@@ -1,0 +1,14 @@
+{
+  "name": "transcribe",
+  "displayName": "Transcribe",
+  "version": "0.1.0",
+  "description": "视频/音频转文字插件。基于 mlx-whisper（Apple GPU 加速）和 faster-whisper（CPU），支持模型选择、音频拆分、自动代理。",
+  "author": {
+    "name": "1whistlerrrr",
+    "url": "https://github.com/1whistlerrrr"
+  },
+  "keywords": ["whisper", "transcribe", "audio", "video", "speech-to-text", "mlx", "apple-silicon"],
+  "license": "MIT",
+  "homepage": "https://github.com/1whistlerrrr/transcribe-plugin",
+  "repository": "https://github.com/1whistlerrrr/transcribe-plugin"
+}
